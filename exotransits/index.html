@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExoTransit Planner — MOTHRA</title>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-void: #06080d;
+    --bg-panel: #0c1018;
+    --bg-card: #111827;
+    --bg-row-hover: #1a2332;
+    --border: #1e293b;
+    --border-bright: #334155;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-blue: #38bdf8;
+    --accent-cyan: #22d3ee;
+    --accent-amber: #fbbf24;
+    --accent-red: #f87171;
+    --accent-green: #4ade80;
+    --accent-purple: #a78bfa;
+    --transit-glow: rgba(56, 189, 248, 0.08);
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    --font-sans: 'IBM Plex Sans', -apple-system, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-size: 14px; }
+
+  body {
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle starfield grain */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.08) 1px, transparent 0),
+                       radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,0.05) 1px, transparent 0),
+                       radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,0.06) 1px, transparent 0),
+                       radial-gradient(1px 1px at 60% 50%, rgba(255,255,255,0.04) 1px, transparent 0);
+    background-size: 200px 200px, 300px 300px, 250px 250px, 180px 180px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app-shell { position: relative; z-index: 1; }
+
+  /* ── Header ── */
+  .header {
+    padding: 2rem 2.5rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(12,16,24,1) 0%, rgba(6,8,13,0) 100%);
+  }
+  .header-inner {
+    max-width: 1600px;
+    margin: 0 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .header h1 {
+    font-family: var(--font-mono);
+    font-weight: 300;
+    font-size: 1.6rem;
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+  }
+  .header h1 span {
+    color: var(--accent-blue);
+    font-weight: 600;
+  }
+  .header-sub {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    padding-bottom: 0.15rem;
+  }
+  .header-sub span { color: var(--text-secondary); }
+
+  /* ── Controls ── */
+  .controls {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 1.5rem 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .date-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .date-input-wrap label {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  input[type="date"] {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-bright);
+    color: var(--text-primary);
+    padding: 0.55rem 0.9rem;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="date"]:focus { border-color: var(--accent-blue); }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.55rem 1.4rem;
+    border: 1px solid var(--accent-blue);
+    background: transparent;
+    color: var(--accent-blue);
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn:hover {
+    background: rgba(56, 189, 248, 0.1);
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .status-chip {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 0.4rem 0.8rem;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .status-chip .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    display: inline-block;
+  }
+  .dot-loading { background: var(--accent-amber); animation: pulse 1s infinite; }
+  .dot-done { background: var(--accent-green); }
+  .dot-empty { background: var(--text-muted); }
+
+  .moon-chip {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 100px;
+    border: 1px solid #334155;
+    background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(167,139,250,0.02));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: 0.25rem;
+  }
+  .moon-icon { font-size: 1rem; line-height: 1; }
+  .moon-label { color: var(--text-muted); }
+  .moon-value { color: var(--accent-purple); font-weight: 600; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Main content ── */
+  .main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 2.5rem 3rem;
+  }
+
+  /* ── Plot container ── */
+  .plot-wrap {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.5rem;
+    margin-bottom: 2rem;
+    overflow: hidden;
+  }
+  .plot-wrap .js-plotly-plot { border-radius: 8px; }
+
+  /* ── Data table ── */
+  .table-section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .table-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .table-header h2 {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.06em;
+  }
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.7rem 0.9rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-bright);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+  }
+  thead th:hover { color: var(--accent-cyan); }
+  thead th.sorted { color: var(--accent-blue); }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: var(--bg-row-hover); }
+  tbody td {
+    padding: 0.65rem 0.9rem;
+    color: var(--text-secondary);
+  }
+
+  .planet-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .val-na { color: var(--text-muted); font-style: italic; }
+
+  .flag-ok { color: var(--accent-green); }
+  .flag-warn { color: var(--accent-amber); }
+  .flag-bad { color: var(--accent-red); }
+
+  .time-cell { font-size: 0.72rem; }
+  .time-utc { color: var(--text-secondary); }
+  .time-local { color: var(--text-muted); font-size: 0.68rem; }
+
+  .moon-cell { color: var(--accent-purple); }
+
+  /* ── Expandable detail rows ── */
+  .detail-row td {
+    padding: 0;
+    background: var(--bg-card);
+  }
+  .detail-inner {
+    padding: 0.8rem 1.2rem 1rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.8rem 2rem;
+    font-size: 0.75rem;
+  }
+  .detail-group-title {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+  }
+  .detail-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.15rem 0;
+  }
+  .detail-key { color: var(--text-muted); }
+  .detail-val { color: var(--text-secondary); font-weight: 500; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .empty-state .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.3;
+  }
+  .empty-state p { font-size: 0.9rem; line-height: 1.6; }
+
+  /* ── Loading skeleton ── */
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-row-hover) 50%, var(--bg-card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px;
+    height: 300px;
+    margin-bottom: 2rem;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header, .controls, .main { padding-left: 1rem; padding-right: 1rem; }
+    .header h1 { font-size: 1.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-shell" x-data="transitApp()" x-init="init()">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-inner">
+      <div>
+        <h1><span>EXOTRANSIT</span> PLANNER</h1>
+      </div>
+      <div class="header-sub" x-text="siteSubtitle">
+        MOTHRA · El Sauce Observatory ·
+        <span>30°28'S 70°45'W</span> · 1580m
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="date-input-wrap">
+      <label for="obs-date">Obs Date</label>
+      <input type="date" id="obs-date" x-model="obsDate"
+             @keydown.enter="fetchTransits()">
+    </div>
+
+    <div class="date-input-wrap">
+      <label for="site-select">Site</label>
+      <select id="site-select" x-model="site" style="
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border-bright);
+        color: var(--text-primary);
+        padding: 0.55rem 0.9rem;
+        border-radius: 6px;
+        outline: none;
+        cursor: pointer;
+      ">
+        <option value="obstech">ObsTech / El Sauce</option>
+        <option value="keck">Keck / Maunakea</option>
+      </select>
+    </div>
+
+    <label style="display:flex; align-items:center; gap:0.45rem; cursor:pointer;
+                  font-family:var(--font-mono); font-size:0.78rem; color:var(--text-secondary);
+                  user-select:none;">
+      <input type="checkbox" x-model="brightOnly" style="
+        accent-color: var(--accent-blue); width:14px; height:14px; cursor:pointer;
+      ">
+      Bright time only
+    </label>
+
+    <button class="btn" @click="fetchTransits()" :disabled="loading">
+      <template x-if="!loading">
+        <span>Compute Transits</span>
+      </template>
+      <template x-if="loading">
+        <span>Computing…</span>
+      </template>
+    </button>
+
+    <template x-if="statusMsg">
+      <div class="status-chip">
+        <span class="dot" :class="statusDot"></span>
+        <span x-text="statusMsg"></span>
+      </div>
+    </template>
+
+    <template x-if="moonPhasePct !== null">
+      <div class="moon-chip">
+        <span class="moon-icon" x-text="moonEmoji"></span>
+        <span class="moon-label">Moon</span>
+        <span class="moon-value" x-text="moonPhasePct + '%'"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Loading skeleton -->
+    <template x-if="loading">
+      <div>
+        <div class="skeleton" style="height:420px;"></div>
+        <div class="skeleton" style="height:200px;"></div>
+      </div>
+    </template>
+
+    <!-- Results -->
+    <template x-if="!loading && data">
+
+      <div>
+        <!-- Airmass plot -->
+        <template x-if="data.plot">
+          <div class="plot-wrap">
+            <div id="airmass-plot" style="width:100%; height:500px;"></div>
+          </div>
+        </template>
+
+        <!-- No results -->
+        <template x-if="data.count === 0">
+          <div class="empty-state">
+            <div class="icon">☽</div>
+            <p>No viable transits found for the night of <strong x-text="data.obs_date"></strong>.</p>
+            <p style="margin-top:0.5rem; font-size:0.8rem;">Try a different date — or widen your constraints.</p>
+          </div>
+        </template>
+
+        <!-- Data table -->
+        <template x-if="data.table.length > 0">
+          <div class="table-section">
+            <div class="table-header">
+              <h2>
+                <span x-text="data.count"></span> target<span x-text="data.count === 1 ? '' : 's'"></span>
+                · <span x-text="data.obs_date"></span>
+              </h2>
+            </div>
+            <div class="table-scroll">
+              <div x-ref="tableTarget"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+    </template>
+
+    <!-- Initial empty state -->
+    <template x-if="!loading && !data">
+      <div class="empty-state" style="padding-top:6rem;">
+        <div class="icon">⟡</div>
+        <p>Select an observing date and hit <strong>Compute Transits</strong>.</p>
+        <p style="margin-top:0.5rem; font-size:0.8rem; max-width:420px; margin-inline:auto;">
+          Searches all NASA Exoplanet Archive transiting planets for viable events
+          visible from the selected observatory on the selected night.
+        </p>
+      </div>
+    </template>
+
+  </div>
+</div>
+
+<script>
+// ── Color palette for targets ──
+const TARGET_COLORS = [
+  '#38bdf8', '#f87171', '#4ade80', '#fbbf24', '#a78bfa',
+  '#fb923c', '#22d3ee', '#e879f9', '#34d399', '#f472b6',
+  '#60a5fa', '#facc15', '#c084fc', '#2dd4bf', '#fb7185',
+];
+
+function transitApp() {
+  return {
+    obsDate: new Date().toISOString().slice(0, 10),
+    loading: false,
+    data: null,
+    statusMsg: '',
+    statusDot: '',
+    sortCol: 'vmag',
+    sortDir: 1,  // 1 = asc, -1 = desc
+    expanded: {},
+    moonPhasePct: null,
+    brightOnly: true,
+    site: 'obstech',
+    tzLabel: 'America/Santiago',
+
+    get siteSubtitle() {
+      const sites = {
+        obstech: 'MOTHRA · El Sauce Observatory · 30°28\'S 70°45\'W · 1580m',
+        keck: 'Keck Observatory · Maunakea · 19°49\'N 155°28\'W · 4145m',
+      };
+      return sites[this.site] || sites.obstech;
+    },
+
+    get moonEmoji() {
+      const p = this.moonPhasePct;
+      if (p === null) return '';
+      if (p < 5) return '🌑';
+      if (p < 25) return '🌒';
+      if (p < 45) return '🌓';
+      if (p < 55) return '🌔';
+      if (p < 75) return '🌕';
+      if (p < 95) return '🌖';
+      return '🌕';
+    },
+
+    init() {},
+
+    async fetchTransits() {
+      if (!this.obsDate) return;
+      this.loading = true;
+      this.data = null;
+      this.moonPhasePct = null;
+      this.statusMsg = 'Computing ephemerides…';
+      this.statusDot = 'dot-loading';
+      this.expanded = {};
+
+      try {
+        const resp = await fetch(`/api/transits?obs_date=${this.obsDate}&bright_only=${this.brightOnly}&site=${this.site}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        this.data = await resp.json();
+
+        // Track the timezone for display
+        if (this.data.tz_name) {
+          this.tzLabel = this.data.tz_name;
+        }
+
+        // Compute nightly average moon illumination
+        if (this.data.table.length > 0) {
+          const phases = this.data.table.map(r => r.moon_phase).filter(v => v != null);
+          this.moonPhasePct = phases.length > 0 ? Math.round(phases.reduce((a, b) => a + b, 0) / phases.length) : null;
+        } else {
+          this.moonPhasePct = null;
+        }
+
+        if (this.data.count > 0) {
+          this.statusMsg = `${this.data.count} target${this.data.count === 1 ? '' : 's'} found`;
+          this.statusDot = 'dot-done';
+        } else {
+          this.statusMsg = 'No viable transits';
+          this.statusDot = 'dot-empty';
+        }
+
+        // Render after Alpine processes templates
+        this.$nextTick(() => {
+          if (this.data && this.data.plot) {
+            this.renderPlot();
+          }
+          if (this.data && this.data.table.length > 0) {
+            this.renderTable();
+          }
+        });
+
+      } catch (err) {
+        console.error(err);
+        this.statusMsg = 'Error: ' + err.message;
+        this.statusDot = 'dot-empty';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    sortBy(col) {
+      if (this.sortCol === col) {
+        this.sortDir *= -1;
+      } else {
+        this.sortCol = col;
+        this.sortDir = 1;
+      }
+      this.$nextTick(() => this.renderTable());
+    },
+
+    get sortedTable() {
+      if (!this.data || !this.data.table) return [];
+      const rows = [...this.data.table];
+      const col = this.sortCol;
+      const dir = this.sortDir;
+      rows.sort((a, b) => {
+        let va = a[col], vb = b[col];
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        if (typeof va === 'string') return va.localeCompare(vb) * dir;
+        return (va - vb) * dir;
+      });
+      return rows;
+    },
+
+    renderTable() {
+      const target = this.$refs.tableTarget;
+      if (!target) return;
+
+      const rows = this.sortedTable;
+      if (rows.length === 0) { target.innerHTML = ''; return; }
+
+      const fmt = (v, dec) => v == null ? '<span class="val-na">—</span>' : Number(v).toFixed(dec);
+      const fmtTime = (utc, local) =>
+        `<span class="time-utc">${utc.replace(' UTC','')}</span><br><span class="time-local">${local}</span>`;
+
+      const blFlag = (row) => {
+        if (!row.baseline_flag && !row.twilight_flag) return '<span class="flag-ok">✓</span>';
+        let parts = [];
+        if (row.pre_bl_lost > 0) parts.push(`pre −${row.pre_bl_lost}%`);
+        if (row.post_bl_lost > 0) parts.push(`post −${row.post_bl_lost}%`);
+        if (row.twilight_flag) {
+          if (row.tw_pre_lost > 0) parts.push(`tw pre −${row.tw_pre_lost}%`);
+          if (row.tw_post_lost > 0) parts.push(`tw post −${row.tw_post_lost}%`);
+        }
+        return `<span class="flag-warn">${parts.join(', ')}</span>`;
+      };
+
+      let html = `<table>
+        <thead><tr>
+          <th data-col="planet">Planet</th>
+          <th data-col="vmag">V mag</th>
+          <th data-col="depth_pct">Depth %</th>
+          <th data-col="duration_hr">Dur (hr)</th>
+          <th>R_J</th>
+          <th>Transit Start</th><th>Mid-Transit</th><th>Transit End</th>
+          <th data-col="moon_sep">Moon Sep °</th>
+          <th>BL Flag</th><th></th>
+        </tr></thead><tbody>`;
+
+      rows.forEach((r, i) => {
+        const color = TARGET_COLORS[i % TARGET_COLORS.length];
+        const id = `row-${i}`;
+        html += `<tr class="data-row" data-idx="${i}" style="cursor:pointer;" onclick="toggleDetail('${id}')">
+          <td><span class="planet-name" style="border-left:3px solid ${color}; padding-left:0.5rem;">${r.planet}</span></td>
+          <td>${fmt(r.vmag, 1)}</td>
+          <td>${fmt(r.depth_pct, 2)}</td>
+          <td>${fmt(r.duration_hr, 2)}</td>
+          <td>${fmt(r.r_jup, 2)}</td>
+          <td class="time-cell">${fmtTime(r.transit_start_utc, r.transit_start_local)}</td>
+          <td class="time-cell">${fmtTime(r.transit_mid_utc, r.transit_mid_local)}</td>
+          <td class="time-cell">${fmtTime(r.transit_end_utc, r.transit_end_local)}</td>
+          <td class="moon-cell">${fmt(r.moon_sep, 1)}</td>
+          <td>${blFlag(r)}</td>
+          <td style="font-size:0.7rem; color:var(--text-muted);">▾</td>
+        </tr>
+        <tr class="detail-row" id="${id}" style="display:none;">
+          <td colspan="11">
+            <div class="detail-inner">
+              <div>
+                <div class="detail-group-title">Coordinates</div>
+                <div class="detail-item"><span class="detail-key">RA</span><span class="detail-val">${fmt(r.ra,4)}°</span></div>
+                <div class="detail-item"><span class="detail-key">Dec</span><span class="detail-val">${fmt(r.dec,4)}°</span></div>
+              </div>
+              <div>
+                <div class="detail-group-title">Full Window (UTC)</div>
+                <div class="detail-item"><span class="detail-key">Baseline Start</span><span class="detail-val">${r.baseline_start_utc}</span></div>
+                <div class="detail-item"><span class="detail-key">Baseline End</span><span class="detail-val">${r.baseline_end_utc}</span></div>
+              </div>
+              <div>
+                <div class="detail-group-title">Full Window (Local)</div>
+                <div class="detail-item"><span class="detail-key">Baseline Start</span><span class="detail-val">${r.baseline_start_local}</span></div>
+                <div class="detail-item"><span class="detail-key">Baseline End</span><span class="detail-val">${r.baseline_end_local}</span></div>
+              </div>
+              <div>
+                <div class="detail-group-title">Moon</div>
+                <div class="detail-item"><span class="detail-key">Alt @ Start</span><span class="detail-val">${r.moon_alt_start}°</span></div>
+                <div class="detail-item"><span class="detail-key">Alt @ Mid</span><span class="detail-val">${r.moon_alt_mid}°</span></div>
+                <div class="detail-item"><span class="detail-key">Alt @ End</span><span class="detail-val">${r.moon_alt_end}°</span></div>
+                <div class="detail-item"><span class="detail-key">Separation</span><span class="detail-val">${r.moon_sep}°</span></div>
+                <div class="detail-item"><span class="detail-key">Phase</span><span class="detail-val">${r.moon_phase}%</span></div>
+              </div>
+              <div>
+                <div class="detail-group-title">Altitude Check</div>
+                <div class="detail-item"><span class="detail-key">Transit Visible</span><span class="detail-val ${r.transit_visible ? 'flag-ok' : 'flag-bad'}">${r.transit_visible ? 'Yes' : 'No'}</span></div>
+                <div class="detail-item"><span class="detail-key">Pre BL Lost</span><span class="detail-val">${r.pre_bl_lost}%</span></div>
+                <div class="detail-item"><span class="detail-key">Post BL Lost</span><span class="detail-val">${r.post_bl_lost}%</span></div>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      target.innerHTML = html;
+
+      // Wire up sortable headers
+      target.querySelectorAll('th[data-col]').forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          // Dispatch to Alpine
+          this.sortBy(col);
+        });
+      });
+    },
+
+    renderPlot() {
+      const p = this.data.plot;
+      if (!p) return;
+      const el = document.getElementById('airmass-plot');
+      if (!el) return;
+
+      const traces = [];
+
+      // Moon
+      traces.push({
+        x: p.times,
+        y: p.moon_alts,
+        mode: 'lines',
+        name: 'Moon',
+        line: { color: '#aaaacc', width: 1.5, dash: 'dash' },
+        opacity: 0.6,
+        hovertemplate: 'Moon<br>Alt: %{y:.1f}°<br>%{x|%H:%M}<extra></extra>',
+      });
+
+      // Targets
+      p.targets.forEach((tgt, i) => {
+        const color = TARGET_COLORS[i % TARGET_COLORS.length];
+
+        // Full night thin line
+        traces.push({
+          x: p.times,
+          y: tgt.alts,
+          mode: 'lines',
+          name: tgt.name,
+          legendgroup: tgt.name,
+          line: { color: color, width: 1 },
+          opacity: 0.35,
+          hovertemplate: `${tgt.name}<br>Alt: %{y:.1f}°<br>%{x|%H:%M}<extra></extra>`,
+        });
+
+        // Baseline segments (medium)
+        tgt.segments.forEach((seg, si) => {
+          const blX = seg.baseline_indices.map(j => p.times[j]);
+          const blY = seg.baseline_indices.map(j => tgt.alts[j]);
+          traces.push({
+            x: blX, y: blY,
+            mode: 'lines',
+            name: tgt.name + (si === 0 ? ' baseline' : ''),
+            legendgroup: tgt.name,
+            showlegend: false,
+            line: { color: color, width: 3 },
+            opacity: 0.8,
+            hovertemplate: `${tgt.name} (baseline)<br>Alt: %{y:.1f}°<br>%{x|%H:%M}<extra></extra>`,
+          });
+
+          // Transit segment (thick)
+          const trX = seg.transit_indices.map(j => p.times[j]);
+          const trY = seg.transit_indices.map(j => tgt.alts[j]);
+          traces.push({
+            x: trX, y: trY,
+            mode: 'lines',
+            name: tgt.name + ' transit',
+            legendgroup: tgt.name,
+            showlegend: false,
+            line: { color: color, width: 5 },
+            opacity: 1.0,
+            hovertemplate: `${tgt.name} (transit)<br>Alt: %{y:.1f}°<br>%{x|%H:%M}<extra></extra>`,
+          });
+        });
+
+        // Peak annotation
+        traces.push({
+          x: [p.times[tgt.peak_idx]],
+          y: [tgt.alts[tgt.peak_idx]],
+          mode: 'text',
+          text: [tgt.name],
+          textposition: 'top right',
+          textfont: { color: color, size: 11, family: 'JetBrains Mono' },
+          showlegend: false,
+          hoverinfo: 'skip',
+        });
+      });
+
+      // Airmass ticks for right y-axis
+      const altTicks = [10, 20, 30, 45, 60, 90];
+      const amLabels = altTicks.map(a => a > 5 ? (1 / Math.sin(a * Math.PI / 180)).toFixed(2) : '—');
+
+      const layout = {
+        paper_bgcolor: '#0c1018',
+        plot_bgcolor: '#0d1117',
+        font: { family: 'JetBrains Mono, monospace', color: '#94a3b8', size: 11 },
+        margin: { l: 60, r: 70, t: 50, b: 60 },
+        title: {
+          text: `Observable Transits — ${this.data.obs_date}  (${this.data.count} targets)`,
+          font: { size: 14, color: '#e2e8f0' },
+          x: 0.01,
+          xanchor: 'left',
+        },
+        xaxis: {
+          type: 'date',
+          tickformat: '%H:%M',
+          tickfont: { size: 10 },
+          gridcolor: '#1a1a2e',
+          gridwidth: 0.5,
+          zeroline: false,
+          title: { text: `Time (${this.tzLabel}) — night of ${this.data.obs_date}`, font: { size: 11, color: '#64748b' } },
+        },
+        yaxis: {
+          range: [0, 90],
+          title: { text: 'Altitude (°)', font: { size: 11, color: '#64748b' } },
+          gridcolor: '#1a1a2e',
+          gridwidth: 0.5,
+          dtick: 15,
+          zeroline: false,
+        },
+        yaxis2: {
+          overlaying: 'y',
+          side: 'right',
+          range: [0, 90],
+          tickvals: altTicks,
+          ticktext: amLabels,
+          title: { text: 'Airmass', font: { size: 11, color: '#64748b' } },
+          gridcolor: 'transparent',
+          zeroline: false,
+        },
+        legend: {
+          bgcolor: 'rgba(26,26,46,0.85)',
+          bordercolor: '#334155',
+          borderwidth: 1,
+          font: { size: 10, color: '#e2e8f0' },
+          x: 1, xanchor: 'right',
+          y: 1, yanchor: 'top',
+        },
+        shapes: [
+          // 33° limit line
+          {
+            type: 'line', yref: 'y',
+            x0: p.times[0], x1: p.times[p.times.length - 1],
+            y0: 33, y1: 33,
+            line: { color: '#f87171', width: 1, dash: 'dot' },
+          },
+          // Dusk vertical
+          {
+            type: 'line', xref: 'x', yref: 'y',
+            x0: p.dusk, x1: p.dusk, y0: 0, y1: 90,
+            line: { color: '#4a6fa5', width: 1, dash: 'dash' },
+          },
+          // Dawn vertical
+          {
+            type: 'line', xref: 'x', yref: 'y',
+            x0: p.dawn, x1: p.dawn, y0: 0, y1: 90,
+            line: { color: '#4a6fa5', width: 1, dash: 'dash' },
+          },
+          // Pre-twilight shading
+          {
+            type: 'rect', xref: 'x', yref: 'y',
+            x0: p.times[0], x1: p.dusk, y0: 0, y1: 90,
+            fillcolor: 'rgba(26,42,58,0.7)',
+            line: { width: 0 },
+            layer: 'below',
+          },
+          // Post-dawn shading
+          {
+            type: 'rect', xref: 'x', yref: 'y',
+            x0: p.dawn, x1: p.times[p.times.length - 1], y0: 0, y1: 90,
+            fillcolor: 'rgba(26,42,58,0.7)',
+            line: { width: 0 },
+            layer: 'below',
+          },
+        ],
+        hovermode: 'x unified',
+      };
+
+      const config = {
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+        displaylogo: false,
+        responsive: true,
+      };
+
+      Plotly.newPlot(el, traces, layout, config);
+    },
+  };
+}
+
+function toggleDetail(id) {
+  const row = document.getElementById(id);
+  if (row) {
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+  }
+}
+</script>
+
+</body>
+</html>
